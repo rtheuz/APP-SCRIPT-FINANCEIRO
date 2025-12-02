@@ -74,6 +74,7 @@ function parseBrasilNumber(raw) {
 
 // ----------------------
 // atualizarSaldosLD (corrigida: Q/R/O2:P2 com futuros; O1:P1 SÓ realizado/Caixa)
+// Modificada: R e O2:P2 consideram apenas linhas visíveis quando há filtros ativos
 // ----------------------
 function atualizarSaldosLD() {
   const sh = SHEET_LD;
@@ -89,16 +90,34 @@ function atualizarSaldosLD() {
   const startRow = headerRow + 1;
   const numRows = lastRow - headerRow; // linhas reais a ler
 
+  // --------------------------------------------------
+  // 🔍 DETECTAR SE HÁ FILTROS ATIVOS
+  // --------------------------------------------------
+  const filter = sh.getFilter();
+  const temFiltro = filter !== null;
+  
+  // Se houver filtro, obter o array de visibilidade das linhas
+  let linhasVisiveis = null;
+  if (temFiltro) {
+    linhasVisiveis = [];
+    for (let i = 0; i < numRows; i++) {
+      // isRowHiddenByFilter retorna true se a linha está oculta pelo filtro
+      const linhaAtual = startRow + i;
+      const estaOculta = sh.isRowHiddenByFilter(linhaAtual);
+      linhasVisiveis.push(!estaOculta);
+    }
+  }
+
   // 1. LÊ COLUNAS M:N:O:P:Q (13..17) para o cálculo total (Q e R)
   const dados = sh.getRange(startRow, 13, numRows, 5).getValues();
 
   // 2. LÊ COLUNA D (4) para verificar se o lançamento é "realizado" (Data de Caixa)
   const datasCaixa = sh.getRange(startRow, 4, numRows, 1).getValues();
 
-  let saldoGeral = 0; // Acumula todos os lançamentos (para R e O2:P2)
-  let saldoContaTotal = 0; // Acumula todos os lançamentos (para Q)
+  let saldoGeral = 0; // Acumula lançamentos visíveis quando filtrado (para R e O2:P2)
+  let saldoContaTotal = 0; // Acumula todos os lançamentos (para Q - NÃO afetado por filtro)
   
-  let saldoContaRealizado = 0; // Acumula APENAS os lançamentos com Data de Caixa (para O1:P1)
+  let saldoContaRealizado = 0; // Acumula APENAS os lançamentos com Data de Caixa (para O1:P1 - NÃO afetado por filtro)
   
   const resultadosQ = [];
   const resultadosR = [];
@@ -112,16 +131,26 @@ function atualizarSaldosLD() {
     const valor = parseBrasilNumber(rawValor);
 
     // ----------------------------------------------------------------------
-    // CÁLCULO TOTAL (Para Q, R e O2:P2 - Mantém lançamentos futuros)
+    // CÁLCULO Q (Saldo da Conta Selecionada - NÃO afetado por filtros)
     // ----------------------------------------------------------------------
-    saldoGeral += valor;
     if (conta === contaSelecionada) saldoContaTotal += valor;
-
     resultadosQ.push([saldoContaTotal]); // Q
-    resultadosR.push([saldoGeral]); // R
 
     // ----------------------------------------------------------------------
-    // CÁLCULO REALIZADO (Para O1:P1 - APENAS se tiver Data de Caixa)
+    // CÁLCULO R e Saldo Geral (AFETADO por filtros quando ativos)
+    // ----------------------------------------------------------------------
+    // Se tem filtro e a linha está oculta, não soma no saldoGeral
+    if (temFiltro && !linhasVisiveis[i]) {
+      // Linha oculta pelo filtro: mantém o saldo anterior
+      resultadosR.push([saldoGeral]); // R mantém valor acumulado sem somar esta linha
+    } else {
+      // Linha visível ou sem filtro: soma normalmente
+      saldoGeral += valor;
+      resultadosR.push([saldoGeral]); // R
+    }
+
+    // ----------------------------------------------------------------------
+    // CÁLCULO REALIZADO (Para O1:P1 - NÃO afetado por filtros)
     // ----------------------------------------------------------------------
     if (dataCaixa && conta === contaSelecionada) {
         saldoContaRealizado += valor;
@@ -133,7 +162,7 @@ function atualizarSaldosLD() {
   sh.getRange(startRow, 18, resultadosR.length, 1).setValues(resultadosR); // R
 
   // --------------------------------------------------
-  // ✅ Exibe o Saldo da Conta Selecionada (O1:P1) - AGORA SÓ REALIZADO (SEM FUTUROS)
+  // ✅ Exibe o Saldo da Conta Selecionada (O1:P1) - NÃO afetado por filtros
   // --------------------------------------------------
   const targetRangeO1P1 = sh.getRange("O1:P1");
   if (!targetRangeO1P1.isPartOfMerge()) targetRangeO1P1.merge();
@@ -144,10 +173,10 @@ function atualizarSaldosLD() {
     .setValue(saldoContaRealizado); 
 
   // --------------------------------------------------
-  // 🧮 EXISTENTE: Exibe o Saldo Geral (O2:P2) - MANTÉM COM FUTUROS
+  // 🧮 Exibe o Saldo Geral (O2:P2) - AFETADO por filtros quando ativos
   // --------------------------------------------------
 
-  // Pega o último valor gravado em R (que é saldoGeral, o saldo total com futuros)
+  // Pega o saldoGeral (que agora considera apenas linhas visíveis quando filtrado)
   let ultimoR = saldoGeral; 
 
   const targetRangeO2P2 = sh.getRange("O2:P2");
@@ -155,14 +184,15 @@ function atualizarSaldosLD() {
   targetRangeO2P2
     .setNumberFormat('"R$" #,##0.00')
     .setHorizontalAlignment("center")
-    // Usa o saldo TOTAL (com futuros)
+    // Usa o saldo (filtrado ou total dependendo se há filtro)
     .setValue(ultimoR);
 
   // --------------------------------------------------
-  // 💬 TOAST
+  // 💬 TOAST - Indica se está mostrando saldo filtrado ou total
   // --------------------------------------------------
+  const tipoSaldo = temFiltro ? "Filtrado" : "Total";
   SpreadsheetApp.getActive().toast(
-    `✅ Saldos atualizados — Conta Selecionada (Caixa): R$ ${saldoContaRealizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Geral (Total): R$ ${ultimoR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+    `✅ Saldos atualizados — Conta Selecionada (Caixa): R$ ${saldoContaRealizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Geral (${tipoSaldo}): R$ ${ultimoR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
     "Saldos",
     5
   );
