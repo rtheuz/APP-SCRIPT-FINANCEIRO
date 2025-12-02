@@ -154,9 +154,10 @@ function atualizarSaldosLD() {
   if (!targetRangeO2P2.isPartOfMerge()) targetRangeO2P2.merge();
   targetRangeO2P2
     .setNumberFormat('"R$" #,##0.00')
-    .setHorizontalAlignment("center")
-    // Fórmula SUBTOTAL atualiza automaticamente quando filtros são aplicados
-    .setFormula('=SUBTOTAL(109,P5:P)');
+    .setHorizontalAlignment("center");
+  // Fórmula SUBTOTAL atualiza automaticamente quando filtros são aplicados
+  // Deve ser aplicada apenas na célula O2 (primeira célula do merge)
+  sh.getRange("O2").setFormula('=SUBTOTAL(109,P5:P)');
 
   // --------------------------------------------------
   // 💬 TOAST
