@@ -256,45 +256,79 @@ function onEdit(e) {
     const cadastro = SHEET_CAD;
 
     // ======================================================
-    // 🗓️ FORMATAÇÃO AUTOMÁTICA DE DATAS (colunas B, C, D)
-    // ======================================================
-    if (row >= 5 && col >= 2 && col <= 4) {
-      const num = val.toString().replace(/\D/g, '');
+// 🗓️ FORMATAÇÃO AUTOMÁTICA DE DATAS (colunas B, C, D)
+// ======================================================
+if (row >= 5 && col >= 2 && col <= 4) {
+  const num = val.toString().replace(/\D/g, '');
 
-      // Aceita entradas com 5,6,7 ou 8 dígitos:
-      // - 5 -> D M MM YY  (ex: 11025 => 1/10/25)
-      // - 6 -> DD MM YY  (ex: 011025 ou 251025)
-      // - 7 -> D MM YYYY (ex: 1112025 => 1/11/2025)
-      // - 8 -> DD MM YYYY (ex: 25102025)
-      if (num.length >= 5 && num.length <= 8) {
-        // Decidir o tamanho do dia: se o comprimento for ímpar (5 ou 7) assumimos dia com 1 dígito,
-        // se for par (6 ou 8) assumimos dia com 2 dígitos.
-        const dayLen = (num.length % 2 === 1) ? 1 : 2;
-        const monthLen = 2;
-        const yearLen = num.length - dayLen - monthLen;
+  // Aceita entradas com 4,5,6,7 ou 8 dígitos:
+  // - 4 -> DD MM (ex: 0110 => 01/10/ANOATUAL)
+  // - 5 -> D M YY ou DD M YY (ex: 11025 => 1/10/25 ou 10125 => 10/1/25)
+  // - 6 -> DD MM YY (ex: 011025 => 01/10/25)
+  // - 7 -> D MM YYYY (ex: 1112025 => 1/11/2025)
+  // - 8 -> DD MM YYYY (ex: 01112025 => 01/11/2025)
+  
+  if (num.length >= 4 && num.length <= 8) {
+    let dia, mes, anoNum;
+    
+    // Lógica de parsing baseada no comprimento
+    if (num.length === 4) {
+      // DDMM - adiciona ano atual
+      dia = num.slice(0, 2);
+      mes = num.slice(2, 4);
+      anoNum = new Date().getFullYear();
+      
+    } else if (num.length === 5) {
+      // Pode ser DMMYY (ex: 11025) ou DDMYY (ex: 10125)
+      // Vamos tentar DMMYY primeiro
+      dia = num.slice(0, 1);
+      mes = num.slice(1, 3);
+      const anoStr = num.slice(3, 5);
+      anoNum = Number(anoStr) < 80 ? 2000 + Number(anoStr) : 1900 + Number(anoStr);
+      
+      // Valida se o mês é válido, senão tenta DDMYY
+      if (Number(mes) > 12) {
+        dia = num.slice(0, 2);
+        mes = num.slice(2, 3);
+        anoNum = Number(anoStr) < 80 ? 2000 + Number(anoStr) : 1900 + Number(anoStr);
+      }
+      
+    } else if (num.length === 6) {
+      // DDMMYY
+      dia = num.slice(0, 2);
+      mes = num.slice(2, 4);
+      const anoStr = num.slice(4, 6);
+      anoNum = Number(anoStr) < 80 ? 2000 + Number(anoStr) : 1900 + Number(anoStr);
+      
+    } else if (num.length === 7) {
+      // DMMYYYY
+      dia = num.slice(0, 1);
+      mes = num.slice(1, 3);
+      anoNum = Number(num.slice(3, 7));
+      
+    } else if (num.length === 8) {
+      // DDMMYYYY
+      dia = num.slice(0, 2);
+      mes = num.slice(2, 4);
+      anoNum = Number(num.slice(4, 8));
+    }
 
-        // Validar yearLen (aceitamos 2 ou 4)
-        if (yearLen === 2 || yearLen === 4) {
-          const dia = num.slice(0, dayLen);
-          const mes = num.slice(dayLen, dayLen + monthLen);
-          const anoStr = num.slice(dayLen + monthLen);
+    // Valida dia e mês
+    const diaNum = Number(dia);
+    const mesNum = Number(mes);
+    
+    if (diaNum >= 1 && diaNum <= 31 && mesNum >= 1 && mesNum <= 12) {
+      // Corrige fuso: cria data às 12h
+      const data = new Date(anoNum, mesNum - 1, diaNum, 12, 0, 0);
 
-          let anoNum = Number(anoStr);
-          if (yearLen === 2) {
-            anoNum = anoNum < 80 ? 2000 + anoNum : 1900 + anoNum;
-          }
-
-          // Corrige fuso: cria data às 12h
-          const data = new Date(anoNum, Number(mes) - 1, Number(dia), 12, 0, 0);
-
-          if (!isNaN(data.getTime())) {
-            r.setValue(data);
-            r.setNumberFormat('dd/mm/yy');
-            return;
-          }
-        }
+      if (!isNaN(data.getTime())) {
+        r.setValue(data);
+        r.setNumberFormat('dd/mm/yy');
+        return;
       }
     }
+  }
+}
 
     // ======================================================
     // 🔸 BLOCO PROJETO (G:H:I → AY:BA)
