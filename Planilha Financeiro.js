@@ -74,7 +74,7 @@ function parseBrasilNumber(raw) {
 
 // ----------------------
 // atualizarSaldosLD (corrigida: Q/R/O2:P2 com futuros; O1:P1 SÓ realizado/Caixa)
-// Modificada: R e O2:P2 consideram apenas linhas visíveis quando há filtros ativos
+// Modificado: R e O2:P2 consideram apenas linhas visíveis quando há filtros ativos
 // ----------------------
 function atualizarSaldosLD() {
   const sh = SHEET_LD;
@@ -114,7 +114,7 @@ function atualizarSaldosLD() {
   // 2. LÊ COLUNA D (4) para verificar se o lançamento é "realizado" (Data de Caixa)
   const datasCaixa = sh.getRange(startRow, 4, numRows, 1).getValues();
 
-  let saldoGeral = 0; // Acumula lançamentos visíveis quando filtrado (para R e O2:P2)
+  let saldoGeralVisivel = 0; // Acumula lançamentos visíveis quando filtrado (para R e O2:P2)
   let saldoContaTotal = 0; // Acumula todos os lançamentos (para Q - NÃO afetado por filtro)
   
   let saldoContaRealizado = 0; // Acumula APENAS os lançamentos com Data de Caixa (para O1:P1 - NÃO afetado por filtro)
@@ -139,15 +139,12 @@ function atualizarSaldosLD() {
     // ----------------------------------------------------------------------
     // CÁLCULO R e Saldo Geral (AFETADO por filtros quando ativos)
     // ----------------------------------------------------------------------
-    // Se tem filtro e a linha está oculta, não soma no saldoGeral
-    if (temFiltro && !linhasVisiveis[i]) {
-      // Linha oculta pelo filtro: mantém o saldo anterior
-      resultadosR.push([saldoGeral]); // R mantém valor acumulado sem somar esta linha
-    } else {
-      // Linha visível ou sem filtro: soma normalmente
-      saldoGeral += valor;
-      resultadosR.push([saldoGeral]); // R
+    // Se linhasVisiveis não é null (há filtro) e a linha está oculta, não soma
+    const linhaVisivel = linhasVisiveis === null || linhasVisiveis[i];
+    if (linhaVisivel) {
+      saldoGeralVisivel += valor;
     }
+    resultadosR.push([saldoGeralVisivel]); // R
 
     // ----------------------------------------------------------------------
     // CÁLCULO REALIZADO (Para O1:P1 - NÃO afetado por filtros)
@@ -176,8 +173,8 @@ function atualizarSaldosLD() {
   // 🧮 Exibe o Saldo Geral (O2:P2) - AFETADO por filtros quando ativos
   // --------------------------------------------------
 
-  // Pega o saldoGeral (que agora considera apenas linhas visíveis quando filtrado)
-  let ultimoR = saldoGeral; 
+  // Pega o saldoGeralVisivel (que considera apenas linhas visíveis quando filtrado)
+  let ultimoR = saldoGeralVisivel; 
 
   const targetRangeO2P2 = sh.getRange("O2:P2");
   if (!targetRangeO2P2.isPartOfMerge()) targetRangeO2P2.merge();
