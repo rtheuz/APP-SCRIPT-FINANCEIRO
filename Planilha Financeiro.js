@@ -74,7 +74,7 @@ function parseBrasilNumber(raw) {
 
 // ----------------------
 // atualizarSaldosLD (corrigida: Q/R/O2:P2 com futuros; O1:P1 SÓ realizado/Caixa)
-// Modificado: R e O2:P2 consideram apenas linhas visíveis quando há filtros ativos
+// Modificado: O2:P2 usa fórmula SUBTOTAL para atualizar automaticamente com filtros
 // ----------------------
 function atualizarSaldosLD() {
   const sh = SHEET_LD;
@@ -90,34 +90,16 @@ function atualizarSaldosLD() {
   const startRow = headerRow + 1;
   const numRows = lastRow - headerRow; // linhas reais a ler
 
-  // --------------------------------------------------
-  // 🔍 DETECTAR SE HÁ FILTROS ATIVOS
-  // --------------------------------------------------
-  const filter = sh.getFilter();
-  const temFiltro = filter !== null;
-  
-  // Se houver filtro, obter o array de visibilidade das linhas
-  let linhasVisiveis = null;
-  if (temFiltro) {
-    linhasVisiveis = [];
-    for (let i = 0; i < numRows; i++) {
-      // isRowHiddenByFilter retorna true se a linha está oculta pelo filtro
-      const linhaAtual = startRow + i;
-      const estaOculta = sh.isRowHiddenByFilter(linhaAtual);
-      linhasVisiveis.push(!estaOculta);
-    }
-  }
-
   // 1. LÊ COLUNAS M:N:O:P:Q (13..17) para o cálculo total (Q e R)
   const dados = sh.getRange(startRow, 13, numRows, 5).getValues();
 
   // 2. LÊ COLUNA D (4) para verificar se o lançamento é "realizado" (Data de Caixa)
   const datasCaixa = sh.getRange(startRow, 4, numRows, 1).getValues();
 
-  let saldoGeralVisivel = 0; // Acumula lançamentos visíveis quando filtrado (para R e O2:P2)
-  let saldoContaTotal = 0; // Acumula todos os lançamentos (para Q - NÃO afetado por filtro)
+  let saldoGeral = 0; // Acumula todos os lançamentos (para R)
+  let saldoContaTotal = 0; // Acumula todos os lançamentos (para Q)
   
-  let saldoContaRealizado = 0; // Acumula APENAS os lançamentos com Data de Caixa (para O1:P1 - NÃO afetado por filtro)
+  let saldoContaRealizado = 0; // Acumula APENAS os lançamentos com Data de Caixa (para O1:P1)
   
   const resultadosQ = [];
   const resultadosR = [];
@@ -131,23 +113,16 @@ function atualizarSaldosLD() {
     const valor = parseBrasilNumber(rawValor);
 
     // ----------------------------------------------------------------------
-    // CÁLCULO Q (Saldo da Conta Selecionada - NÃO afetado por filtros)
+    // CÁLCULO TOTAL (Para Q e R - soma todos os lançamentos)
     // ----------------------------------------------------------------------
+    saldoGeral += valor;
     if (conta === contaSelecionada) saldoContaTotal += valor;
+
     resultadosQ.push([saldoContaTotal]); // Q
+    resultadosR.push([saldoGeral]); // R
 
     // ----------------------------------------------------------------------
-    // CÁLCULO R e Saldo Geral (AFETADO por filtros quando ativos)
-    // ----------------------------------------------------------------------
-    // Se linhasVisiveis não é null (há filtro) e a linha está oculta, não soma
-    const linhaVisivel = linhasVisiveis === null || linhasVisiveis[i];
-    if (linhaVisivel) {
-      saldoGeralVisivel += valor;
-    }
-    resultadosR.push([saldoGeralVisivel]); // R
-
-    // ----------------------------------------------------------------------
-    // CÁLCULO REALIZADO (Para O1:P1 - NÃO afetado por filtros)
+    // CÁLCULO REALIZADO (Para O1:P1 - APENAS se tiver Data de Caixa)
     // ----------------------------------------------------------------------
     if (dataCaixa && conta === contaSelecionada) {
         saldoContaRealizado += valor;
@@ -170,26 +145,24 @@ function atualizarSaldosLD() {
     .setValue(saldoContaRealizado); 
 
   // --------------------------------------------------
-  // 🧮 Exibe o Saldo Geral (O2:P2) - AFETADO por filtros quando ativos
+  // 🧮 Exibe o Saldo Geral (O2:P2) - USA FÓRMULA SUBTOTAL para atualizar automaticamente com filtros
   // --------------------------------------------------
 
-  // Pega o saldoGeralVisivel (que considera apenas linhas visíveis quando filtrado)
-  let ultimoR = saldoGeralVisivel; 
-
+  // Usa SUBTOTAL(109, P5:P) que soma apenas valores visíveis automaticamente
+  // Função 109 = SOMA ignorando valores ocultos por filtros
   const targetRangeO2P2 = sh.getRange("O2:P2");
   if (!targetRangeO2P2.isPartOfMerge()) targetRangeO2P2.merge();
   targetRangeO2P2
     .setNumberFormat('"R$" #,##0.00')
     .setHorizontalAlignment("center")
-    // Usa o saldo (filtrado ou total dependendo se há filtro)
-    .setValue(ultimoR);
+    // Fórmula SUBTOTAL atualiza automaticamente quando filtros são aplicados
+    .setFormula('=SUBTOTAL(109,P5:P)');
 
   // --------------------------------------------------
-  // 💬 TOAST - Indica se está mostrando saldo filtrado ou total
+  // 💬 TOAST
   // --------------------------------------------------
-  const tipoSaldo = temFiltro ? "Filtrado" : "Total";
   SpreadsheetApp.getActive().toast(
-    `✅ Saldos atualizados — Conta Selecionada (Caixa): R$ ${saldoContaRealizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Geral (${tipoSaldo}): R$ ${ultimoR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+    `✅ Saldos atualizados — Conta Selecionada (Caixa): R$ ${saldoContaRealizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Geral: Fórmula SUBTOTAL (atualiza automaticamente com filtros)`,
     "Saldos",
     5
   );
