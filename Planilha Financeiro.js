@@ -74,6 +74,7 @@ function parseBrasilNumber(raw) {
 
 // ----------------------
 // atualizarSaldosLD (corrigida: Q/R/O2:P2 com futuros; O1:P1 SÓ realizado/Caixa)
+// Modificado: O2:P2 usa fórmula SUBTOTAL para atualizar automaticamente com filtros
 // ----------------------
 function atualizarSaldosLD() {
   const sh = SHEET_LD;
@@ -95,7 +96,7 @@ function atualizarSaldosLD() {
   // 2. LÊ COLUNA D (4) para verificar se o lançamento é "realizado" (Data de Caixa)
   const datasCaixa = sh.getRange(startRow, 4, numRows, 1).getValues();
 
-  let saldoGeral = 0; // Acumula todos os lançamentos (para R e O2:P2)
+  let saldoGeral = 0; // Acumula todos os lançamentos (para R)
   let saldoContaTotal = 0; // Acumula todos os lançamentos (para Q)
   
   let saldoContaRealizado = 0; // Acumula APENAS os lançamentos com Data de Caixa (para O1:P1)
@@ -112,7 +113,7 @@ function atualizarSaldosLD() {
     const valor = parseBrasilNumber(rawValor);
 
     // ----------------------------------------------------------------------
-    // CÁLCULO TOTAL (Para Q, R e O2:P2 - Mantém lançamentos futuros)
+    // CÁLCULO TOTAL (Para Q e R - soma todos os lançamentos)
     // ----------------------------------------------------------------------
     saldoGeral += valor;
     if (conta === contaSelecionada) saldoContaTotal += valor;
@@ -133,7 +134,7 @@ function atualizarSaldosLD() {
   sh.getRange(startRow, 18, resultadosR.length, 1).setValues(resultadosR); // R
 
   // --------------------------------------------------
-  // ✅ Exibe o Saldo da Conta Selecionada (O1:P1) - AGORA SÓ REALIZADO (SEM FUTUROS)
+  // ✅ Exibe o Saldo da Conta Selecionada (O1:P1) - NÃO afetado por filtros
   // --------------------------------------------------
   const targetRangeO1P1 = sh.getRange("O1:P1");
   if (!targetRangeO1P1.isPartOfMerge()) targetRangeO1P1.merge();
@@ -144,25 +145,25 @@ function atualizarSaldosLD() {
     .setValue(saldoContaRealizado); 
 
   // --------------------------------------------------
-  // 🧮 EXISTENTE: Exibe o Saldo Geral (O2:P2) - MANTÉM COM FUTUROS
+  // 🧮 Exibe o Saldo Geral (O2:P2) - USA FÓRMULA SUBTOTAL para atualizar automaticamente com filtros
   // --------------------------------------------------
 
-  // Pega o último valor gravado em R (que é saldoGeral, o saldo total com futuros)
-  let ultimoR = saldoGeral; 
-
+  // Usa SUBTOTAL(109, P5:P) que soma apenas valores visíveis automaticamente
+  // Função 109 = SOMA ignorando valores ocultos por filtros
   const targetRangeO2P2 = sh.getRange("O2:P2");
   if (!targetRangeO2P2.isPartOfMerge()) targetRangeO2P2.merge();
   targetRangeO2P2
     .setNumberFormat('"R$" #,##0.00')
-    .setHorizontalAlignment("center")
-    // Usa o saldo TOTAL (com futuros)
-    .setValue(ultimoR);
+    .setHorizontalAlignment("center");
+  // Fórmula SUBTOTAL atualiza automaticamente quando filtros são aplicados
+  // Deve ser aplicada apenas na célula O2 (primeira célula do merge)
+  sh.getRange("O2").setFormula('=SUBTOTAL(109,P5:P)');
 
   // --------------------------------------------------
   // 💬 TOAST
   // --------------------------------------------------
   SpreadsheetApp.getActive().toast(
-    `✅ Saldos atualizados — Conta Selecionada (Caixa): R$ ${saldoContaRealizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Geral (Total): R$ ${ultimoR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+    `✅ Saldos atualizados — Conta Selecionada (Caixa): R$ ${saldoContaRealizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | Geral: Fórmula SUBTOTAL (atualiza automaticamente com filtros)`,
     "Saldos",
     5
   );
